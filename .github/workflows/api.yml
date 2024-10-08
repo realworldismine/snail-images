@@ -1,0 +1,46 @@
+name: Deploy Images via API Gateway
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_IAM_ID }}:role/${{ vars.AWS_INVOKE_ROLE }}
+          aws-region: ap-northeast-2
+
+      - name: Find changed images
+        id: find_images
+        run: |
+          git diff --name-only HEAD^ HEAD | grep -E '\.(jpg|jpeg|png|gif)$' || echo "No images found"
+
+      - name: Send images to API Gateway
+        if: steps.find_images.outputs.images != ''
+        run: |
+          for img in $(git diff --name-only HEAD^ HEAD | grep -E '\.(jpg|jpeg|png|gif)$'); do
+            ext="${img##*.}"
+            if [[ "$ext" == "jpg" || "$ext" == "jpeg" ]]; then
+              content_type="image/jpeg"
+            elif [[ "$ext" == "png" ]]; then
+              content_type="image/png"
+            elif [[ "$ext" == "gif" ]]; then
+              content_type="image/gif"
+            fi
+            
+            echo "Sending $img to API Gateway"
+            curl -X PUT "https://ka5mu2j2n1.execute-api.ap-northeast-2.amazonaws.com/v0/images/raw//${img}" \
+              -H "Authorization: Bearer $(aws sts assume-role-with-web-identity --role-arn arn:aws:iam::${{ vars.AWS_IAM_ID }}:role/${{ vars.AWS_INVOKE_ROLE }} --role-session-name GitHubActionsSession --web-identity-token ${{ secrets.OIDC_TOKEN }} --query Credentials.SessionToken --output text)" \
+              -H "x-api-key: ${{ secrets.API_KEY }}"" \
+              -H "Content-Type: $content_type" \
+              --data-binary "@$img"
+          done
