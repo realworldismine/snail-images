@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  id-token: write
+  contents: read
+  
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -12,6 +16,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -19,28 +25,60 @@ jobs:
           role-to-assume: arn:aws:iam::${{ vars.AWS_IAM_ID }}:role/${{ vars.AWS_INVOKE_ROLE }}
           aws-region: ap-northeast-2
 
-      - name: Find changed images
-        id: find_images
-        run: |
-          git diff --name-only HEAD^ HEAD | grep -E '\.(jpg|jpeg|png|gif)$' || echo "No images found"
-
       - name: Send images to API Gateway
-        if: steps.find_images.outputs.images != ''
         run: |
-          for img in $(git diff --name-only HEAD^ HEAD | grep -E '\.(jpg|jpeg|png|gif)$'); do
-            ext="${img##*.}"
-            if [[ "$ext" == "jpg" || "$ext" == "jpeg" ]]; then
-              content_type="image/jpeg"
-            elif [[ "$ext" == "png" ]]; then
-              content_type="image/png"
-            elif [[ "$ext" == "gif" ]]; then
-              content_type="image/gif"
+          CHANGED_FILES=$(git diff --name-status HEAD^ HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          API_ENDPOINT="https://ka5mu2j2n1.execute-api.ap-northeast-2.amazonaws.com/v0/images/raw"
+
+          # Loop through each changed file and process accordingly
+          echo "$CHANGED_FILES" | while IFS= read -r line; do
+            # Extract the change type and file name(s)
+            change_type=$(echo "$line" | awk '{print $1}')
+            first_file=$(echo "$line" | awk '{print $2}')
+            second_file=$(echo "$line" | awk '{print $3}')
+
+            echo "Processing file - Change type: $change_type, First file: $first_file, Second file: $second_file"
+
+            if [[ "$first_file" =~ \.(png|jpg|jpeg|gif|bmp)$ || "$second_file" =~ \.(png|jpg|jpeg|gif|bmp)$ ]]; then
+                
+                # Determine content type based on file extension
+                if [[ "$first_file" =~ \.png$ ]]; then
+                    content_type="image/png"
+                elif [[ "$first_file" =~ \.jpg$ || "$first_file" =~ \.jpeg$ ]]; then
+                    content_type="image/jpeg"
+                elif [[ "$first_file" =~ \.gif$ ]]; then
+                    content_type="image/gif"
+                elif [[ "$first_file" =~ \.bmp$ ]]; then
+                    content_type="image/bmp"
+                else
+                    content_type="application/octet-stream"  # Fallback for unknown types
+                fi
+
+                case "$change_type" in
+                    A|M|C)  # Added, Modified, or Copied
+                        echo "Processing $first_file with PUT request with $change_type"
+                        curl -X PUT "$API_ENDPOINT/$first_file" \
+                              -H "Content-Type: $content_type" \
+                              -H "x-api-key: ${{ secrets.API_KEY }}" \
+                              --data-binary "@$first_file"
+                        ;;
+                    D)  # Deleted
+                        echo "Processing $first_file with DELETE request with $change_type"
+                        curl -X DELETE "$API_ENDPOINT/$first_file" \
+                              -H "x-api-key: ${{ secrets.API_KEY }}"
+                        ;;
+                    R*)  # Renamed
+                        echo "Processing rename: DELETE $first_file and PUT $second_file with $change_type"
+                        curl -X DELETE "$API_ENDPOINT/$first_file" \
+                              -H "x-api-key: ${{ secrets.API_KEY }}"
+                        curl -X PUT "$API_ENDPOINT/$second_file" \
+                              -H "Content-Type: $content_type" \
+                              -H "x-api-key: ${{ secrets.API_KEY }}" \
+                              --data-binary "@$second_file"
+                        ;;
+                esac
             fi
-            
-            echo "Sending $img to API Gateway"
-            curl -X PUT "https://ka5mu2j2n1.execute-api.ap-northeast-2.amazonaws.com/v0/images/raw//${img}" \
-              -H "Authorization: Bearer $(aws sts assume-role-with-web-identity --role-arn arn:aws:iam::${{ vars.AWS_IAM_ID }}:role/${{ vars.AWS_INVOKE_ROLE }} --role-session-name GitHubActionsSession --web-identity-token ${{ secrets.OIDC_TOKEN }} --query Credentials.SessionToken --output text)" \
-              -H "x-api-key: ${{ secrets.API_KEY }}"" \
-              -H "Content-Type: $content_type" \
-              --data-binary "@$img"
           done
