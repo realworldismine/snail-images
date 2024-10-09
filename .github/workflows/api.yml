@@ -62,6 +62,7 @@ jobs:
                         echo "Processing $first_file with PUT request with $change_type"
                         curl -X PUT "$API_ENDPOINT/$first_file" \
                               -H "Content-Type: $content_type" \
+                              -H "filename: $first_file" \
                               -H "x-api-key: ${{ secrets.API_KEY }}" \
                               --data-binary "@$first_file"
                         ;;
@@ -77,6 +78,7 @@ jobs:
                         curl -X PUT "$API_ENDPOINT/$second_file" \
                               -H "Content-Type: $content_type" \
                               -H "x-api-key: ${{ secrets.API_KEY }}" \
+                              -H "filename: $second_file" \
                               --data-binary "@$second_file"
                         ;;
                 esac
