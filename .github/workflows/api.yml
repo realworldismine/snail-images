@@ -42,16 +42,16 @@ jobs:
 
             echo "Processing file - Change type: $change_type, First file: $first_file, Second file: $second_file"
 
-            if [[ "$first_file" =~ \.(png|jpg|jpeg|gif|bmp)$ || "$second_file" =~ \.(png|jpg|jpeg|gif|bmp)$ ]]; then
+            if [[ "${first_file,,}" =~ \.(png|jpg|jpeg|gif|bmp)$ || "${second_file,,}" =~ \.(png|jpg|jpeg|gif|bmp)$ ]]; then
                 
                 # Determine content type based on file extension
-                if [[ "$first_file" =~ \.png$ ]]; then
+                if [[ "${first_file,,}" =~ \.png$ ]]; then
                     content_type="image/png"
-                elif [[ "$first_file" =~ \.jpg$ || "$first_file" =~ \.jpeg$ ]]; then
+                elif [[ "${first_file,,}" =~ \.jpg$ || "${first_file,,}" =~ \.jpeg$ ]]; then
                     content_type="image/jpeg"
-                elif [[ "$first_file" =~ \.gif$ ]]; then
+                elif [[ "${first_file,,}" =~ \.gif$ ]]; then
                     content_type="image/gif"
-                elif [[ "$first_file" =~ \.bmp$ ]]; then
+                elif [[ "${first_file,,}" =~ \.bmp$ ]]; then
                     content_type="image/bmp"
                 else
                     content_type="application/octet-stream"  # Fallback for unknown types
@@ -59,26 +59,26 @@ jobs:
 
                 case "$change_type" in
                     A|M|C)  # Added, Modified, or Copied
-                        echo "Processing $first_file with PUT request with $change_type"
-                        curl -X PUT "$API_ENDPOINT/$first_file" \
+                        echo "Processing ${first_file,,} with PUT request with $change_type"
+                        curl -X PUT "$API_ENDPOINT/${first_file,,}" \
                               -H "Content-Type: $content_type" \
-                              -H "filename: $first_file" \
+                              -H "filename: ${first_file,,}" \
                               -H "x-api-key: ${{ secrets.API_KEY }}" \
                               --data-binary "@$first_file"
                         ;;
                     D)  # Deleted
-                        echo "Processing $first_file with DELETE request with $change_type"
-                        curl -X DELETE "$API_ENDPOINT/$first_file" \
+                        echo "Processing ${first_file,,} with DELETE request with $change_type"
+                        curl -X DELETE "$API_ENDPOINT/${first_file,,}" \
                               -H "x-api-key: ${{ secrets.API_KEY }}"
                         ;;
                     R*)  # Renamed
-                        echo "Processing rename: DELETE $first_file and PUT $second_file with $change_type"
-                        curl -X DELETE "$API_ENDPOINT/$first_file" \
+                        echo "Processing rename: DELETE ${first_file,,} and PUT ${second_file,,} with $change_type"
+                        curl -X DELETE "$API_ENDPOINT/${first_file,,}" \
                               -H "x-api-key: ${{ secrets.API_KEY }}"
-                        curl -X PUT "$API_ENDPOINT/$second_file" \
+                        curl -X PUT "$API_ENDPOINT/${second_file,,}" \
                               -H "Content-Type: $content_type" \
                               -H "x-api-key: ${{ secrets.API_KEY }}" \
-                              -H "filename: $second_file" \
+                              -H "filename: ${second_file,,}" \
                               --data-binary "@$second_file"
                         ;;
                 esac
